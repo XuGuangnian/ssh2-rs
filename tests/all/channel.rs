@@ -141,6 +141,57 @@ fn shell() {
 }
 
 #[test]
+fn interactive_shell() {
+    let sess = ::authed_session();
+    let mut channel = sess.channel_session().unwrap();
+    eprintln!("requesting pty");
+    channel.request_pty("xterm", None, None).unwrap();
+    eprintln!("shell");
+    channel.shell().unwrap();
+    let shell = "/remote_path/exec.sh";
+    channel.write(format!("{}\n", shell).as_bytes()).unwrap();
+
+    loop {
+        let mut buf = [0u8; 1024];
+
+        match channel.read(&mut buf) {
+            // the channel has closed and we got an EOF
+            Ok(0) => {
+                // println!("read 0;");
+                break;
+            }
+            // We got some data; try to decode it as utf-8
+            Ok(c) => {
+                let slice = &buf[0..c];
+                match std::str::from_utf8(slice) {
+                    Ok(s) => {
+                        print!("{}", s);
+                        if s.contains("FINISH") {
+                            // channel.close().unwrap();
+                            break;
+                        }
+                    }
+
+                    Err(e) => {
+                        // TODO: you should buffer this up and try to stick it together
+                        // with the next chunk of data that you read later on
+                        eprintln!("output was not utf8: {}", e);
+                        break;
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Error while reading: {}", e);
+                break;
+            }
+        }
+    }
+    // channel.wait_close().unwrap();
+    channel.close().unwrap();
+    println!("{}", channel.exit_status().unwrap());
+}
+
+#[test]
 fn setenv() {
     let sess = ::authed_session();
     let mut channel = sess.channel_session().unwrap();
